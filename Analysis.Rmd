@@ -1,0 +1,206 @@
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library (rvest)
+library(dplyr)
+library(xml2)
+library (stringr)
+library(robotstxt)
+library(ggplot2)
+library(forcats)
+```
+
+```{r}
+bb_data <- read.csv("bobs_burger_episode.csv", stringsAsFactors = FALSE)
+head(bb_data)
+```
+
+```{r}
+#Clean summary 
+bb_data$summary <- str_replace(bb_data$summary, "\n", " ")
+bb_data <- bb_data %>%
+  mutate(episode_number = row_number())
+```
+
+```{r}
+top_5_episodes <- bb_data %>%
+  arrange(desc(rating)) %>%
+  head(5)
+lowest_5_episodes <- bb_data %>%
+  arrange(rating) %>%
+  head(5)
+install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+
+kable(top_5_episodes, format = "html", row.names = FALSE,
+      col.names = c("Season", "Title", "Rating", "Number of Rating","Summary","Episode Number")) %>%
+  kable_styling(full_width = FALSE)
+kable(lowest_5_episodes, format = "html", row.names = FALSE,
+      col.names = c("Season", "Title", "Rating", "Number of Rating","Summary","Episode Number")) %>%
+  kable_styling(full_width = FALSE)
+```
+```{r}
+season_order <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+bb_data$season <- as.numeric(str_remove_all(bb_data$season, "[^[:digit:]]"))
+bb_data$season <- factor(bb_data$season, levels = season_order)
+bb_font <- "Hobo Std"
+
+ggplot(bb_data, aes(x = episode_number, y = rating, color= season, factor= season)) +
+  geom_point() +
+  geom_smooth()+
+  theme_minimal()+
+  guides(col = guide_legend(nrow = , title = "Season", title.theme = element_text(size = 8))) +
+  labs(x = "Episodes", y = "Ratings", title = "Bob's Burgers Episode Ratings Grouped by Season")+
+  theme(plot.title = element_text(family = bb_font, size = 15, face = "bold", hjust = 0.5, margin = margin(b = 20)),
+        axis.title = element_text(family = bb_font, size = 10, face = "bold"),
+        axis.text = element_text(family = bb_font, size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(family = bb_font, size = 14),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+```
+```{r}
+#Need to make sure the number of rating is cleaned and turned from a chr to a dbl 
+bb_data$number_of_rating <- as.numeric(str_replace_all(bb_data$number_of_rating, "[(), ]", ""))
+
+#plot the graph
+  ggplot(bb_data, aes(x = episode_number, y = number_of_rating, color= season, factor= season)) +
+  geom_point() +
+  geom_smooth()+
+  theme_minimal()+
+  guides(col = guide_legend(nrow = , title = "Season", title.theme = element_text(size = 8))) +
+  labs(x = "Episodes", y = "Ratings", title = "Bob's Burgers Number of Ratings by Season")+
+    theme(plot.title = element_text(family = bb_font, size = 15, face = "bold", hjust = 0.5, margin = margin(b =  20)),
+     axis.title = element_text(family = bb_font, size = 10, face = "bold"),
+     axis.text = element_text(family = bb_font, size = 10),
+     legend.title = element_blank(),
+     legend.text = element_text(family = bb_font, size = 14),
+     panel.background = element_rect(fill = "white"),
+     panel.grid.major = element_blank(),
+     panel.grid.minor = element_blank(),
+     panel.border = element_blank())
+    
+```
+```{r}
+character_regex <- "(Bob|Linda|Tina|Gene|Louise)"
+episode_data <- bb_data %>%
+  mutate(character = str_extract(summary, character_regex))
+  head(episode_data)
+
+character_ratings <- episode_data %>%
+  group_by(character) %>%
+  summarize(average_rating = mean(rating, na.rm = TRUE))%>%
+  drop_na()
+
+head(character_ratings)
+
+
+ggplot(character_ratings, aes(x = character, y = average_rating, fill = character)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  labs(x = "Character", y = "Average Rating", title = "Average Ratings by Character") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("Bob" = "#dc7648", "Linda" = "#cc6666", "Tina" = "#71a2b6", "Gene" = "#f5d97e", "Louise" = "#f492b4"))+
+  theme(plot.title = element_text(family = bb_font, size = 15, face = "bold", hjust = 0.5, margin = margin(b = 20)),
+        axis.title = element_text(family = bb_font, size = 10, face = "bold"),
+        axis.text = element_text(family = bb_font, size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(family = bb_font, size = 14),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+  
+
+```
+```{r}
+# Count the number of mentions of each character in each episode
+char_count <- bb_data %>%
+  mutate(
+    Bob = str_count(summary, "Bob"),
+    Linda = str_count(summary, "Linda"),
+    Tina = str_count(summary, "Tina"),
+    Gene = str_count(summary, "Gene"),
+    Louise = str_count(summary, "Louise")
+  ) %>%
+  select(season, Bob, Linda, Tina, Gene, Louise) %>%
+  group_by(season) %>%
+  summarise(
+    Bob = sum(Bob),
+    Linda = sum(Linda),
+    Tina = sum(Tina),
+    Gene = sum(Gene),
+    Louise = sum(Louise)
+  )
+
+# Convert the data to long format and reorder the levels of the character factor by the number of mentions in each season
+char_count_long <- pivot_longer(char_count, cols = c(Bob, Linda, Tina, Gene, Louise), names_to = "character", values_to = "mentions") %>%
+  group_by(season) %>%
+  arrange(desc(mentions)) %>%
+  mutate(character = fct_reorder(character, mentions))
+
+# Create a bar chart showing the popularity of each character throughout the season
+ggplot(char_count_long, aes(x = season, y = mentions, fill = character)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal()+
+  labs(title = "The Frequency of Mentions for Each Main Character", x = "Season", y = "Number of Mentions") +
+   scale_fill_manual(values = c("Bob" = "#dc7648", "Linda" = "#cc6666", "Tina" = "#71a2b6", "Gene" = "#f5d97e", "Louise" = "#f492b4"))+
+   theme(plot.title = element_text(family = bb_font, size = 15, face = "bold", hjust = 0.5, margin = margin(b = 30)),
+        axis.title = element_text(family = bb_font, size = 5, face = "bold"),
+        axis.text = element_text(family = bb_font, size = 5),
+        legend.title = element_blank(),
+        legend.text = element_text(family = bb_font, size = 14),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+  
+
+
+```
+```{r}
+# Create a new data frame with average rating of each character per season
+char_rating <- bb_data %>%
+  mutate(
+    Bob = if_else(str_detect(summary, "Bob"), rating, NA_real_),
+    Linda = if_else(str_detect(summary, "Linda"), rating, NA_real_),
+    Tina = if_else(str_detect(summary, "Tina"), rating, NA_real_),
+    Gene = if_else(str_detect(summary, "Gene"), rating, NA_real_),
+    Louise = if_else(str_detect(summary, "Louise"), rating, NA_real_)
+  ) %>%
+  group_by(season) %>%
+  summarize(
+    Bob = mean(Bob, na.rm = TRUE),
+    Linda = mean(Linda, na.rm = TRUE),
+    Tina = mean(Tina, na.rm = TRUE),
+    Gene = mean(Gene, na.rm = TRUE),
+    Louise = mean(Louise, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = c(Bob, Linda, Tina, Gene, Louise),
+               names_to = "character", 
+               values_to = "average_rating")%>%
+  group_by(season) %>%
+  arrange(desc(average_rating)) %>%
+  mutate(character = fct_reorder(character, average_rating))
+
+# Plot the average rating of each character per season
+ggplot(char_rating, aes(x = season, y = average_rating, fill = character)) +
+  geom_bar(stat = "identity", position = "dodge", width=0.75) +
+  labs(title = "Average Ratings of Main Characters", x = "Season", y = "Average Rating") +
+  scale_fill_manual(values = c("Bob" = "#dc7648", "Linda" = "#cc6666", "Tina" = "#71a2b6", "Gene" = "#f5d97e", "Louise" = "#f492b4"))+
+  theme_minimal()+
+  theme(plot.title = element_text(family = bb_font, size = 15, face = "bold", hjust = 0.5, margin = margin(b = 30)),
+        axis.title = element_text(family = bb_font, size = 10, face = "bold"),
+        axis.text = element_text(family = bb_font, size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(family = bb_font, size = 14),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+
+```
+
